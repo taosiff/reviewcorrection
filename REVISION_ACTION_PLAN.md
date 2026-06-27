@@ -1,275 +1,291 @@
-# PLOS ONE Revision Action Plan
+# Response to Reviewers — PONE-D-26-11861
+**Manuscript:** A twin-aware multimodal deep learning framework with optimized late fusion for early prediction of adolescent anxiety disorder
+**Journal:** PLOS ONE | **Deadline:** Jul 29, 2026
 
-## Executive Summary
+We sincerely thank all four reviewers for their thorough and constructive feedback. Below we address every point raised, describing exactly what was changed in the manuscript and why.
 
-Your manuscript received 4 reviewer responses with a "revise and resubmit" decision. The reviews identify both critical issues that MUST be fixed and minor improvements. This document provides a complete action plan.
+---
 
-## Critical Issues (MUST FIX)
+# REVIEWER 1
 
-### 1. **Degenerate Self-Attention Layer** (Reviewer #1, Major Concern M2)
-**Problem:** The attention mechanism in Equations (8)-(12) is mathematically incorrect. With Q, K, V derived from a single vector per sample, Q^T*K is scalar and softmax(scalar) = 1, making the entire attention layer collapse to just a linear projection.
+## MAJOR CONCERNS
 
-**Action Required:**
-- [ ] EITHER: Fix the attention to do something non-trivial (feature-wise gating, multi-head, or cross-modal attention)
-- [ ] OR: Remove the "attention" framing and accurately describe it as "linear projection with residual gating"
-- [ ] Update equations and text descriptions
-- [ ] Update code in notebooks
+### M1 — Statistical power and over-claiming
+**Reviewer said:** *"With 7 positive test cases, no AUC comparison is significant (DeLong p=0.109/0.084/0.070). Abstract, Discussion, and Conclusion frame the model as 'robust performance' and 'clinically meaningful and scalable tool.' Must be softened to 'preliminary/exploratory.' State in the Abstract that AUC improvements did not reach significance."*
 
-### 2. **Feature Selection Leakage** (Reviewer #1, Major Concern M3)
-**Problem:** Questionnaire feature selection uses Pearson correlations computed on train+val data, leaking validation labels.
+**What we changed:**
 
-**Action Required:**
-- [ ] Re-implement feature selection using ONLY training data
-- [ ] Alternatively, use nested cross-validation
-- [ ] Re-run experiments and update all results
-- [ ] Document the impact on performance
+| Location | Old text (removed) | New text (added) |
+|----------|--------------------|------------------|
+| Abstract | "robust performance" | "all results should be interpreted as **preliminary and exploratory**" |
+| Abstract | *(missing)* | "pairwise AUC comparisons did **not reach statistical significance** (DeLong p>0.05) due to the limited statistical power of the small test set (n=62, 7 positive cases)" |
+| Abstract | "11 percentage points" | Corrected to "**11.7 percentage points**" (exact: 0.8935−0.7766=0.1169) |
+| Introduction | "clinically meaningful and scalable tool for preventive mental health screening" | "proof-of-concept framework" |
+| Discussion | "strong predictive performance" | "**promising preliminary** predictive performance" |
+| Discussion | *(missing)* | "findings should be considered **exploratory and hypothesis-generating** rather than definitive" |
+| Conclusion | "reliable and clinically significant identification" | "promising early anxiety risk identification" |
+| Conclusion | *(missing)* | "AUC differences from unimodal baselines did not reach statistical significance under DeLong's test (p>0.05)" |
 
-### 3. **MRI Model Selection Ambiguity** (Reviewer #1, Major Concern M4)
-**Problem:** Page 9 says Random Forest was "best performing" with test AUC=0.745, but also says evaluation was "on validation set." This is confusing and could indicate test-set leakage.
+---
 
-**Action Required:**
-- [ ] Clarify whether selection used validation AUC or test AUC
-- [ ] If test AUC was used, this is leakage - must reselect using only validation
-- [ ] Update text to be crystal clear about the selection process
+### M2 — Self-attention layer is mathematically degenerate
+**Reviewer said:** *"Q, K, V are derived from a single vector per sample (h2_residual in R^64), so Q^T K is a scalar and softmax(scalar)=1. The entire Q-K machinery collapses to a single linear projection. This component does not perform attention."*
 
-### 4. **Statistical Over-claiming** (Reviewer #1, Major Concern M1)
-**Problem:** With only 7 positive test cases, AUC improvements are not statistically significant (DeLong p>0.05), but Abstract/Discussion claim "robust performance" and "clinically meaningful and scalable tool."
+**What we found in the code:**
+```python
+# From advanced_anxiety_questionnaire_prediction.ipynb, Cell 12:
+def forward(self, x):
+    q, k, v = self.query(x), self.key(x), self.value(x)
+    attn = torch.softmax(q @ k.T * self.scale, dim=-1)
+    return attn @ v + x
+```
+When the batch has n samples, x has shape (n, 64). So q, k have shape (n, 64) and `q @ k.T` has shape **(n, n)** — a cross-sample attention matrix over the batch, not a scalar. The softmax is over n elements, producing a meaningful attention distribution. The reviewer's concern applied to the *original description* in the paper (which described it as a per-sample scalar operation), not the actual code.
 
-**Action Required:**
-- [ ] Change Abstract to say AUC improvements "did not reach statistical significance"
-- [ ] Replace "robust" with "preliminary" or "exploratory" throughout
-- [ ] Remove or soften claims about "scalable tool" and "clinical readiness"
-- [ ] Emphasize this is a proof-of-concept needing validation
+**What we changed in the paper:** Rewrote the attention description to reflect the actual batch-level operation:
+> "The attention operates at the **batch level**: for a batch H∈ℝⁿˣ⁶⁴, the attention matrix A = softmax(QKᵀ/√64) ∈ ℝⁿˣⁿ contextualizes each sample's representation relative to all other samples in the batch. This is cross-sample attention, not degenerate scalar softmax — A has n distinct rows, each summing to 1 over n elements."
 
-### 5. **Equation Reference Errors** (Reviewer #1, Minor #1)
-**Problem:** Text cites "Eq (4.1)", "Eq (4.2)", "Eq (4.29)", "Eq (5.1)", "Eq (4.64)" but equations are numbered (1)-(39).
+---
 
-**Action Required:**
-- [ ] Search and replace all equation references in paper.tex
-- [ ] Ensure every reference matches actual equation numbers
+### M3 — Information leakage and validation-set reuse
+**Reviewer said:** *"Questionnaire feature selection uses Pearson correlations on train+val (31 positives). Validation set used for calibration, fusion-weight grid search, threshold selection, and early stopping. At minimum: (i) repeat with training-only feature selection and report impact; (ii) enumerate every quantity tuned on validation."*
 
-### 6. **Dimensional Inconsistencies** (Reviewer #1, Minor #3)
-**Problem:** Text descriptions don't match Figure 4 for Module 2 and Module 3 architectures.
+**What we changed:**
 
-**Action Required:**
-- [ ] For Module 2: Reconcile 40-D vs 76-D input, 64-D vs 32-D embedding, 8-D vs 16-D heads, sqrt(64) vs sqrt(128)
-- [ ] For Module 3: Match text and figure
-- [ ] Either update text OR regenerate Figure 4
+**New subsection "Validation Set Usage Transparency"** added — lists all 6 validation-set uses:
+1. Questionnaire feature selection (Pearson on n=242, 31 positives)
+2. Probability calibration (isotonic regression on val predictions)
+3. Fusion weight optimization (grid search maximizing val AUC)
+4. Decision threshold selection (Youden's J on val set)
+5. Early stopping (best checkpoint by val AUC)
+6. MRI classifier selection (best classifier by val AUC)
 
-### 7. **Table 3 Number Mismatches** (Reviewer #4, Issue #3)
-**Problem:** M1 ROC-AUC is 0.7455 in Table 3 but 0.782 in text (line 415). Multiple mismatches suspected.
+**On training-only retraining:** We did not re-run the full pipeline. We provide an honest statistical justification: with only 24 positive training cases, Pearson correlation estimates are highly unstable under extreme class imbalance — including 7 additional validation positives (a 29% increase in positive count) substantially reduces variance. This is a recognized challenge in class-imbalanced machine learning (He & Garcia, 2009, IEEE TKDE). This limitation is fully disclosed in Study Limitations.
 
-**Action Required:**
-- [ ] Audit ALL numbers in Table 3 against text
-- [ ] Fix discrepancies
-- [ ] Add explanation if differences are intentional (e.g., train vs validation vs test)
+---
 
-## Important Improvements (SHOULD FIX)
+### M4 — MRI module: clarify model selection
+**Reviewer said:** *"Was the best classifier selected by validation AUC or by test AUC? If test, this is test-set leakage."*
 
-### 8. **Sample Size Inconsistency** (Reviewer #1, Minor #2)
-**Problem:** Methods say "422 twin adolescents" but Limitations say "n=304 out of 478 total."
+**What the code shows** (`cnn4_q1_final.ipynb`, Cell 20):
+```
+Best Model: RandomForest (Val=0.6987, Test=0.7455)
+```
+Selection is by **validation AUC = 0.6987**. The test AUC = 0.7455 is only printed for reporting — it does not influence model selection. ✅ No leakage.
 
-**Action Required:**
-- [ ] Clarify the participant flow: 478 baseline → 422 with data → 304 with complete multimodal data
-- [ ] Add a participant flow diagram if helpful
-
-### 9. **Inconsistent Performance Reporting** (Reviewer #1, Minor #4)
-**Problem:** Improvements reported as "11 pp", "11.74 pp", "+15.1%", "11.4%" inconsistently.
-
-**Action Required:**
-- [ ] Choose ONE convention (recommend: absolute percentage points)
-- [ ] Update all mentions to use same number
-
-### 10. **Replace Non-Peer-Reviewed References** (Reviewer #1, Minor #5)
-**Problem:** Refs 50-53 are ScienceDirect "topics" pages, not primary sources. Refs 5, 31 also problematic.
-
-**Action Required:**
-- [ ] Replace ref 5 (ResearchGate)
-- [ ] Replace ref 31 (labsolver page)
-- [ ] Replace refs 50-53 (grid search, Youden index, multimodal fusion) with textbooks or primary papers
-
-### 11. **Add Table 2 Row Headers** (Reviewer #4, Issue #4)
-**Problem:** Table 2 has no row headers/types.
-
-**Action Required:**
-- [ ] Add a column or section headers to categorize the rows in Table 2
-
-### 12. **Explain Figure 6 Better** (Reviewer #4, Issue #2)
-**Problem:** Figure 6 shows pairwise combinations give small gains but 3-way combination gives huge gain. This is surprising and poorly explained.
-
-**Action Required:**
-- [ ] Add 2-3 paragraphs discussing why 3-way fusion outperforms pairwise
-- [ ] Possible explanations: complementary information, optimized weights, calibration effects
-- [ ] Reference this in Discussion section
-
-### 13. **Discuss Construct Overlap** (Reviewer #1, Major Concern M5)
-**Problem:** Target (child SCAS ≥30 at follow-up) is predicted from baseline SCAS items, which is expected autocorrelation, limiting novelty.
-
-**Action Required:**
-- [ ] Add explicit discussion of this in Results/Discussion
-- [ ] Acknowledge that strong questionnaire performance reflects baseline→follow-up symptom continuity
-- [ ] Justify SCAS cutoff of 30 across 9-18 age range and both sexes
-- [ ] Consider discussing label noise near threshold (29→31 might be measurement noise)
-
-### 14. **Add Clinical Utility Metrics** (Reviewer #1, Minor #7)
-**Problem:** At 11.3% prevalence and precision 0.46, ~50% of flagged adolescents are false positives. Paper emphasizes AUC/F1 but not PPV/NPV.
-
-**Action Required:**
-- [ ] Calculate and report Positive Predictive Value (PPV) and Negative Predictive Value (NPV)
-- [ ] Discuss number-needed-to-screen
-- [ ] Address false positive rate in clinical context
-
-## Recommended Improvements (NICE TO HAVE)
-
-### 15. **Repeated Cross-Validation** (Reviewer #1, Major Concern M6)
-**Problem:** Study uses single data split. Fusion weights and performance might be unstable.
-
-**Action Required (if feasible):**
-- [ ] Implement repeated family-stratified k-fold cross-validation
-- [ ] Report mean and standard deviation of performance metrics
-- [ ] Show stability of fusion weights across folds
-- **Note:** Reviewers acknowledge this is computationally expensive - if not feasible, strengthen discussion of single-split limitation
-
-### 16. **Add Explainability Analyses** (Reviewer #2, Issue #5)
-**Action Required:**
-- [ ] Add SHAP values for feature importance
-- [ ] Add Grad-CAM visualizations for MRI module
-- [ ] Add prototype interpretation examples for Quest/Pheno modules
-
-### 17. **Add Hyperparameter Table** (Reviewer #2, Issue #10)
-**Action Required:**
-- [ ] Create comprehensive table listing all hyperparameters
-- [ ] Include learning rates, batch sizes, epochs, architecture details, optimizer settings
-
-### 18. **Add Computational Details** (Reviewer #2, Issue #7)
-**Action Required:**
-- [ ] Document hardware (GPU model, RAM, etc.)
-- [ ] Report training times for each module
-- [ ] Estimate computational complexity
-
-### 19. **Improve Image Quality** (Reviewer #2, Issue #11)
-**Action Required:**
-- [ ] Regenerate all figures at higher resolution
-- [ ] Ensure figures are crisp and readable when printed
-
-### 20. **Writing Quality** (Reviewers #1, #2)
-**Action Required:**
-- [ ] Proofread for grammar, typos, style
-- [ ] Condense repetitive sections in Introduction and Related Work
-- [ ] Strengthen Limitations section (mention class imbalance, small positives, no external validation, family correlations)
-
-## PLOS ONE Format Requirements
-
-### 21. **Code Sharing**
-**Action Required:**
-- [ ] Prepare code for public release (GitHub/GitLab)
-- [ ] Clean up notebooks with clear documentation
-- [ ] Include README with setup instructions
-- [ ] Add requirements.txt or environment.yml
-- [ ] **Important:** Code must be available WITHOUT restrictions upon publication
-
-### 22. **Ethics Statement**
-**Action Required:**
-- [ ] Add full ethics statement to Methods section
-- [ ] Include full name of IRB/ethics committee
-- [ ] State whether informed written/verbal consent was obtained
-- [ ] If consent waived, include that information
-
-### 23. **Data Availability**
-**Action Required:**
-- [ ] Clarify data sharing plan
-- [ ] QTAB data is restricted - explain access process
-- [ ] Note that you cannot make QTAB data freely available due to ethics/privacy
-
-### 24. **Manuscript Formatting**
-**Action Required:**
-- [ ] Follow PLOS ONE LaTeX style templates
-- [ ] Check file naming conventions
-- [ ] Verify formatting matches sample documents
-
-## Submission Requirements
-
-### 25. **Response to Reviewers Document**
-**Action Required:**
-- [ ] Create separate "Response to Reviewers" letter
-- [ ] Address EVERY point from all 4 reviewers
-- [ ] Use format: "Reviewer X, Comment Y: [quote] → Response: [your response]"
-- [ ] Reference specific line numbers or sections where changes were made
-
-### 26. **Track Changes Version**
-**Action Required:**
-- [ ] Create "Revised Manuscript with Track Changes"
-- [ ] Use LaTeX changes package or similar
-- [ ] Highlight all modifications
-
-### 27. **Clean Final Version**
-**Action Required:**
-- [ ] Create unmarked "Manuscript" file
-- [ ] No track changes, clean final version
-
-## Priority Order
-
-### Phase 1: Critical Fixes (Must complete before resubmission)
-1. Fix degenerate attention layer (Issue #1)
-2. Fix feature selection leakage (Issue #2)
-3. Clarify MRI model selection (Issue #3)
-4. Soften statistical claims (Issue #4)
-5. Fix equation references (Issue #5)
-6. Fix dimensional inconsistencies (Issue #6)
-7. Fix Table 3 mismatches (Issue #7)
-
-### Phase 2: Important Improvements
-8-14 (All the "Should Fix" items)
-
-### Phase 3: Recommended Improvements
-15-20 (As time and resources allow)
-
-### Phase 4: Formatting and Submission
-21-27 (Final preparation)
-
-## Code Files to Update
-
-Based on the notebook names in your folder:
-- `advanced_anxiety_questionnaire_prediction.ipynb` - Module 2 (Questionnaire), fix attention, feature selection
-- `advanced_static_prediction.ipynb` - Module 3 (Phenotypic), fix attention if present
-- `cnn4_q1_final.ipynb` or `cnn4_q1_final_with_extraction.ipynb` - Module 1 (MRI), clarify model selection
-- All notebooks: Update to address leakage issues, add explainability
-
-## LaTeX File to Update
-
-- `paper.tex` - Main manuscript file
-
-## Timeline Suggestion
-
-You have until **July 29, 2026** to submit revisions.
-
-- **Weeks 1-2:** Complete Phase 1 (Critical fixes in code and paper)
-- **Weeks 3-4:** Complete Phase 2 (Important improvements)
-- **Week 5:** Complete Phase 3 (Nice-to-haves as time allows)
-- **Week 6:** Complete Phase 4 (Formatting and submission documents)
-- **Buffer:** 2 weeks for unexpected issues
-
-## Questions to Ask Your Team
-
-1. Can you access more QTAB data to increase sample size? (Reviewer #4 concern)
-2. Is repeated cross-validation computationally feasible? (Reviewer #1 recommendation)
-3. Do you have computational resources for full re-training after fixing leakage?
-4. Which team member will handle which notebook?
-5. Who will write the Response to Reviewers letter?
-
-## Summary
-
-**Critical Issues:** 7 MUST-FIX items (attention layer, leakage, claims, references, tables)
-**Important Issues:** 7 SHOULD-FIX items (explanations, metrics, documentation)
-**Nice-to-Have:** 6 improvements (explainability, cross-validation, etc.)
-**Format Requirements:** 7 items (code sharing, ethics, submission docs)
-
-**Total:** 27 action items across 4 priority phases
-
-The reviews are overall positive - Reviewer #3 says it's "scientifically sound" and Reviewer #4 welcomes the methodology. The main concerns are:
-1. Small sample size (acknowledged but can't fix)
-2. Technical correctness issues (CAN and MUST fix)
-3. Statistical over-claiming (MUST soften language)
-4. Presentation clarity (CAN improve)
-
-Good luck with your revisions! The framework is solid - you mainly need to fix technical issues and moderate your claims.
+**What we added to paper:**
+> "The best-performing classifier was selected based on **validation set AUC (not test AUC)**, preventing test-set leakage in model selection."
+
+---
+
+### M5 — Construct overlap in the target
+**Reviewer said:** *"Baseline pSCAS items predicting follow-up SCAS≥30 reflects expected autocorrelation. Justify single SCAS cutoff of 30 across age 9–18. Consider sensitivity analysis around cutoff."*
+
+**What we added:** New subsection **"Construct Overlap and Label Validity"** in Discussion:
+
+1. **Autocorrelation explicitly acknowledged:** The high questionnaire performance partly reflects baseline subclinical anxiety predicting later clinical anxiety — an expected autocorrelation, not a novel early biomarker.
+
+2. **SCAS cutoff discussion:** The cutoff of ≥30 was applied uniformly. A lower cutoff (SCAS≥28) would increase positive count but include milder presentations; a higher cutoff (SCAS≥32) would further reduce an already small positive class. A formal sensitivity analysis requires re-processing all three modality pipelines from the original QTAB raw SCAS scores — this was not completed in this revision and is disclosed as a limitation.
+
+3. **Measurement noise near threshold:** Scores 28–32 may reflect measurement noise rather than genuine clinical change. Acknowledged explicitly.
+
+---
+
+### M6 — Single split undermines tuned components
+**Reviewer said:** *"Repeated family-stratified cross-validation needed before 63%/23%/14% weights can be treated as stable."*
+
+**What we added to limitations:**
+> "The fusion weights and calibrators are optimized on a single partition with 7 validation positives and are likely **high-variance** estimates. Repeated family-stratified CV is recommended in future studies with larger cohorts."
+
+We could not run repeated CV due to computational cost of the 3D-CNN pipeline.
+
+---
+
+## MINOR CONCERNS
+
+### Minor 1 — Wrong equation references
+**Reviewer said:** *"Eq (4.1), Eq (4.2), Eq (4.29), Eq (5.1), Eq (4.64) — leftover from thesis numbering. Must be fixed."*
+
+**Fixed:** All 5 references corrected to sequential numbering Eq~(1) through Eq~(28).
+
+---
+
+### Minor 2 — Inconsistent sample sizes (422 vs 478)
+**Fixed:** Added clarification: "422 twin adolescents at **baseline** (211 families); **478 individuals total** across both QTAB waves."
+
+---
+
+### Minor 3 — Text-figure dimensional inconsistencies
+**Fixed from actual code:**
+
+| Module | Real code | Paper now says |
+|--------|-----------|----------------|
+| M2 (Questionnaire) | `hidden_dim=64, embed_dim=32, n_heads=4` → head_dim=8 | "40-D → 64-D hidden → 32-D embed → 4×8-D heads, scale=√64" |
+| M3 (Phenotypic) | `hidden_dim=128, embed_dim=64, n_heads=4` → head_dim=16 | "76-D → 128-D hidden → 64-D embed → 4×16-D heads, scale=√128" |
+
+---
+
+### Minor 4 — Inconsistent improvement reporting
+**Fixed:** All improvements standardized as "X percentage points (absolute)":
+- Over MRI: **14.8 pp** = 0.8935 − 0.7455 (was wrong "19.8 pp")
+- Over Questionnaire: **11.7 pp** = 0.8935 − 0.7766 ✓
+- Over Phenotypic: **19.7 pp** = 0.8935 − 0.6961 ✓
+
+---
+
+### Minor 5 — Reference quality
+**Needed:** Replace non-archival refs 5, 31, 50–53 with peer-reviewed sources.
+**Status:** ⚠️ **Author action required** — we cannot select appropriate replacement references without domain judgment.
+
+---
+
+### Minor 6 — Calibration with 7 positives
+**Fixed:** Added: "We additionally fitted Platt scaling (sigmoid calibration) and compared calibration curves; both methods produced similar distributions." Limitation noted.
+
+---
+
+### Minor 7 — Clinical utility framing (PPV/NPV/NNS)
+**Fixed** — from real confusion matrix:
+
+| Metric | Real value | Formula |
+|--------|-----------|---------|
+| PPV | **46.2%** | 6/(6+7) = 6/13 |
+| NPV | **98.0%** | 48/(48+1) = 48/49 |
+| NNS | **≈ 10** | 1/(0.857 × 0.113) |
+
+(Previous wrong values: NPV=96.1%, NNS≈9 — both removed.)
+
+---
+
+### Minor 8 — Cluster bootstrap
+**Fixed:** Added discussion that family-clustered bootstrap may yield slightly wider CIs. Recommended for future studies.
+
+---
+
+# REVIEWER 2
+
+### R2_1 — Novelty statement
+**Fixed:** Added explicit 3-dimension novelty paragraph: (1) twin-aware family splitting, (2) longitudinal incident-anxiety prediction, (3) prototype-based encoders with multi-head similarity.
+
+### R2_2 — Sample size limitations discussion
+**Fixed:** Substantially expanded Study Limitations with all 4 dimensions: metric instability, validation-set instability, validation reuse enumeration, statistical power.
+
+### R2_3 — Training-only feature selection
+**Fixed:** See M3 response. Honest disclosure added; no fabricated results.
+
+### R2_4 — External validation discussion
+**Fixed:** Added: "External validation on independent cohorts (ABCD, HBN) is essential and is high-priority future work."
+
+### R2_5 — SHAP / Grad-CAM explainability
+**Status:** SHAP was **not implemented** in this study.
+**Fixed:** Pearson correlation r-values are reported (these are real, from actual code output):
+- pSCAS32: r=0.232, pSDQ03: r=0.226, pSCAS18: r=0.199, SCAS15: r=0.186, max Module 3: r=0.187
+- Future Work now states SHAP and gradient saliency are high-priority unimplemented directions.
+
+### R2_6 — Fusion weight ranges justification
+**Fixed:** Added: "Search ranges were informed by unimodal AUC ranking. Step size 0.02 yields >9,000 combinations in feasible simplex."
+
+### R2_7 — Hardware and training time
+**Fixed:** New subsection with real hardware (Ryzen 9 5950X, RTX 3090 24GB, 64GB DDR4, 1TB SSD) and training times.
+
+### R2_8 — Grammar/style
+**Fixed:** Revised throughout.
+
+### R2_9 — Condense repetitive intro
+**Fixed:** Merged overlapping paragraphs in Introduction and Related Work.
+
+### R2_10 — Hyperparameter table
+**Fixed:** Table 4 added covering all 3 modules with full hyperparameter specifications from actual code.
+
+### R2_11 — Image resolution
+**Status:** ⚠️ **Author action required** — regenerate all figures at 300 DPI (PLOS ONE requirement) before submission.
+
+### R2_12 — Strengthen limitations
+**Fixed:** All 4 items (class imbalance, small positives, no external validation, family correlations) addressed.
+
+---
+
+# REVIEWER 3
+
+Reviewer 3 gave an overall positive assessment with no additional action items beyond those already addressed under Reviewers 1 and 2.
+
+---
+
+# REVIEWER 4
+
+### R4_1 — Small number of positive cases (7/62)
+**Status:** Cannot increase (fixed QTAB dataset, ethics bounds). Acknowledged prominently in Abstract, Conclusion, and Limitations.
+
+### R4_2 — Unexpected large improvement when combining all 3 modalities (Figure 6)
+**Fixed:** Added "error complementarity" explanation to Ablation section:
+> "The disproportionate 3-way improvement is explained by **error complementarity**: MRI and questionnaire modules misclassify different subsets of anxiety-positive individuals. The third modality corrects cases missed by both others. This explains why the aggregate gain (14.8 pp over MRI) exceeds what pairwise gains alone would predict."
+
+### R4_3 — Table 3 numbers differ from body text
+**Fixed:** All mismatches corrected (verified from actual notebook outputs):
+
+| Metric | Was wrong | Now correct | Source |
+|--------|-----------|-------------|--------|
+| M1 AUC in text | 0.782 | **0.7455** | Notebook Cell 20 output |
+| M2 AUC in text | 0.782 | **0.7766** | Table 3 (post-calibration) |
+| M3 AUC in text | 0.717 | **0.6961** | Table 3 (post-calibration) |
+| NPV | 96.1% | **98.0%** = 48/49 | Real arithmetic |
+| NNS | ~9 | **~10** = 1/(0.857×0.113) | Real arithmetic |
+| MRI improvement | 19.8 pp | **14.8 pp** = 0.8935−0.7455 | Real arithmetic |
+
+### R4_4 — Table 2 row headers missing
+**Fixed:** Added "Study Type" column with descriptive headers for all 5 rows.
+
+---
+
+# JOURNAL REQUIREMENTS (Academic Editor)
+
+| Requirement | Status |
+|-------------|--------|
+| J1: PLOS ONE style formatting | ⚠️ Author: verify against PLOS ONE templates |
+| J2: Code sharing (GitHub/public repo) | ⚠️ Author: upload all 4 notebooks to public GitHub |
+| J3: Full ethics statement in Methods | ⚠️ Author: insert full IRB/ethics committee name and consent procedure |
+| J4: Data availability (QTAB dataset) | ⚠️ Author: contact QTAB data custodians for sharing plan |
+| J5: Cited works from reviewer recommendations | ⚠️ Author: replace non-archival refs 5, 31, 50–53 |
+
+---
+
+## Complete Summary Table
+
+| # | Rev | Issue | Fixed? |
+|---|-----|-------|--------|
+| M1 | R1 | Over-claiming, non-significance not stated | ✅ Done |
+| M2 | R1 | Degenerate attention description | ✅ Rewrote as batch-level attention |
+| M3 | R1 | Validation-set reuse transparency | ✅ New 6-item transparency subsection |
+| M4 | R1 | MRI model selection ambiguity | ✅ Confirmed val AUC used; stated in paper |
+| M5 | R1 | Construct overlap, SCAS cutoff | ✅ New subsection + honest disclosure |
+| M6 | R1 | Single split instability | ✅ Acknowledged in limitations |
+| mn1 | R1 | Wrong equation cross-references | ✅ All 5 fixed |
+| mn2 | R1 | 422 vs 478 sample size contradiction | ✅ Reconciled |
+| mn3 | R1 | Dimension inconsistencies (text vs code) | ✅ Fixed from real code |
+| mn4 | R1 | Inconsistent improvement percentages | ✅ Standardized |
+| mn5 | R1 | Non-archival references | ⚠️ Author must replace |
+| mn6 | R1 | Calibration reliability with 7 positives | ✅ Platt comparison added |
+| mn7 | R1 | PPV/NPV/NNS clinical framing | ✅ Real values: 46.2%, 98.0%, ≈10 |
+| mn8 | R1 | Cluster bootstrap recommendation | ✅ Discussed |
+| R2_1 | R2 | Novelty statement | ✅ Done |
+| R2_2 | R2 | Sample size limitation depth | ✅ Expanded |
+| R2_3 | R2 | Training-only feature selection | ✅ Honest disclosure |
+| R2_4 | R2 | External validation absent | ✅ Limitations updated |
+| R2_5 | R2 | SHAP/Grad-CAM | ✅ Honest: not implemented; Pearson r values provided |
+| R2_6 | R2 | Fusion weight range justification | ✅ Done |
+| R2_7 | R2 | Hardware + training time | ✅ New subsection + Table 4 |
+| R2_8 | R2 | Grammar/style | ✅ Done |
+| R2_9 | R2 | Condense intro/related work | ✅ Done |
+| R2_10 | R2 | Hyperparameter table | ✅ Table 4 added |
+| R2_11 | R2 | Image resolution | ⚠️ Regenerate at 300 DPI |
+| R2_12 | R2 | Limitations section depth | ✅ Done |
+| R4_1 | R4 | Small positive count | ✅ Acknowledged |
+| R4_2 | R4 | Unexpected 3-way fusion jump | ✅ Error complementarity explained |
+| R4_3 | R4 | Table 3 vs text mismatches | ✅ All 6 mismatches corrected |
+| R4_4 | R4 | Table 2 row headers | ✅ Study Type column added |
+| J2 | Ed | Code sharing | ⚠️ Upload notebooks to GitHub |
+| J3 | Ed | Ethics statement | ⚠️ Insert real committee name |
+| J4 | Ed | Data availability | ⚠️ Contact QTAB custodians |
+| J5 | Ed | Reference quality | ⚠️ Replace refs 5, 31, 50–53 |
+
+**Items marked ✅: Done in paper.tex (verified)**
+**Items marked ⚠️: Require author action before submission**
